@@ -249,15 +249,11 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
 
         uint256 liquidationPrice;
         if (isLong) {
-            liquidationPrice =
-                (currentPrice *
-                    (1 - ((collateral * PRECISION) / positionSize))) /
-                PRECISION;
+            liquidationPrice = (currentPrice *
+                (1 - ((collateral) / positionSize)));
         } else {
-            liquidationPrice =
-                (currentPrice *
-                    (1 + ((collateral * PRECISION) / positionSize))) /
-                PRECISION;
+            liquidationPrice = (currentPrice *
+                (1 + ((collateral) / positionSize)));
         }
 
         require(
@@ -266,7 +262,7 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
         );
 
         uint256 gameTokenPrice = 1;
-        uint256 gameTokens = (positionSize * PRECISION) / gameTokenPrice;
+        uint256 gameTokens = (positionSize ) / gameTokenPrice;
 
         UserPosition storage position = userPosition[msg.sender][betId];
         position.isLong = isLong;

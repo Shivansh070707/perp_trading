@@ -313,12 +313,13 @@ describe("Vault and VaultFactory Contracts", function () {
 
                 // End bet
                 await time.increase(86401);
+                await mockOracle.setPrice(ethers.parseEther("1500"));
                 await vault.endBet(betId);
             });
 
             it("Should allow winner to claim rewards", async function () {
                 // Set close price higher for long position win
-                await mockOracle.setPrice(ethers.parseEther("1500"));
+                
 
                 const initialBalance = await mockToken.balanceOf(user1.address);
                 await vault.connect(user1).claimRewards(betId);
