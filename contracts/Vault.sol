@@ -13,7 +13,11 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
  * @author Shivansh
  * @notice This contract allows users to take long or short positions on asset prices
  */
-contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgradeable {
+contract Vault is
+    OwnableUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable
+{
     uint256 count;
     IERC20 usdc;
     IPyth oracle;
@@ -73,7 +77,7 @@ contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgrad
         uint256 gameTokens;
     }
 
-    mapping(uint256 => BetDetails) public _betDetails;
+    mapping(uint256 => BetDetails) public betDetails;
     mapping(address => mapping(uint256 => UserPosition)) public userPosition;
     mapping(uint256 => uint256) public liquidationCollateral;
 
@@ -208,7 +212,7 @@ contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgrad
 
         count++;
 
-        _betDetails[count] = BetDetails({
+        betDetails[count] = BetDetails({
             assetPrice: currentPrice,
             numPlayers: 0,
             isOpen: true,
@@ -242,7 +246,7 @@ contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgrad
         require(collateral >= MIN_COLLATERAL, CollateralTooLow());
         require(positionSize > collateral, InvalidPositionSize());
 
-        BetDetails storage bet = _betDetails[betId];
+        BetDetails storage bet = betDetails[betId];
         require(bet.isOpen, BetNotOpen());
         require(
             block.timestamp <= bet.startTime + bet.depositPeriod,
@@ -253,14 +257,17 @@ contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgrad
         require(currentPrice != 0, InvalidOraclePrice());
 
         uint256 liquidationPrice;
+        uint256 liquidationMargin = (collateral * PRECISION) / positionSize;
         if (isLong) {
-            liquidationPrice = (currentPrice *
-                (1 - ((collateral) / positionSize)));
+            liquidationPrice =
+                (currentPrice * (PRECISION - liquidationMargin)) /
+                PRECISION;
         } else {
-            liquidationPrice = (currentPrice *
-                (1 + ((collateral) / positionSize)));
+            liquidationPrice =
+                (currentPrice * (PRECISION + liquidationMargin)) /
+                PRECISION;
         }
-
+        
         require(
             usdc.transferFrom(msg.sender, address(this), collateral),
             TransferFailed()
@@ -336,7 +343,7 @@ contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgrad
     function endBet(
         uint256 betId
     ) external onlyOwner betExists(betId) whenNotPaused {
-        BetDetails storage bet = _betDetails[betId];
+        BetDetails storage bet = betDetails[betId];
         require(bet.isOpen, BetAlreadyClosed());
         require(
             block.timestamp >= bet.startTime + bet.duration,
@@ -360,7 +367,7 @@ contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgrad
     function claimRewards(
         uint256 betId
     ) external nonReentrant betExists(betId) whenNotPaused {
-        BetDetails storage bet = _betDetails[betId];
+        BetDetails storage bet = betDetails[betId];
         require(!bet.isOpen, BetNotOpen());
 
         UserPosition storage position = userPosition[msg.sender][betId];
@@ -376,13 +383,12 @@ contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgrad
 
         uint256 userShare;
         if (isWinner) {
-            uint256 winningCollateral = position.isLong
-                ? bet.longCollateral
-                : bet.shortCollateral;
-
+            uint256 totalWinningTokens = position.isLong
+                ? bet.totalLongTokens
+                : bet.totalShortTokens;
             userShare =
-                (position.collateral * totalCollateral) /
-                winningCollateral;
+                (position.gameTokens * totalCollateral) /
+                totalWinningTokens;
         }
 
         position.collateral = 0;
@@ -405,7 +411,7 @@ contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgrad
         uint256 betId,
         uint256 exitGameTokens
     ) external nonReentrant betExists(betId) whenNotPaused {
-        BetDetails storage bet = _betDetails[betId];
+        BetDetails storage bet = betDetails[betId];
         require(!bet.isOpen, DepositsStillOpen());
 
         UserPosition storage position = userPosition[msg.sender][betId];
