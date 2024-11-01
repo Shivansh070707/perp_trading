@@ -2,10 +2,10 @@
 pragma solidity =0.8.27;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "./interfaces/IOracle.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "./interfaces/IPyth.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 /**
  * @title Vault
@@ -13,10 +13,11 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  * @author Shivansh
  * @notice This contract allows users to take long or short positions on asset prices
  */
-contract Vault is Ownable, ReentrancyGuard, Pausable {
+contract Vault is OwnableUpgradeable, PausableUpgradeable ,ReentrancyGuardUpgradeable {
     uint256 count;
-    IERC20 asset;
-    IOracle oracle;
+    IERC20 usdc;
+    IPyth oracle;
+    bytes32 assetId;
     uint256 public constant PRECISION = 1e18;
     uint256 public constant MIN_COLLATERAL = 1e6;
 
@@ -162,19 +163,23 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
     error CannotRecoverVaultToken();
 
     /**
-     * @dev Contract constructor
+     * @dev Initializer function (replaces constructor)
      * @param _oracle Address of the oracle contract
-     * @param _asset Address of the asset token contract
-     * @param initialOwner Address of the initial contract owner
+     * @param _usdc Address of the usdc token contract
      */
-    constructor(
+    function initialize(
         address _oracle,
-        address _asset,
+        address _usdc,
+        bytes32 _assetId,
         address initialOwner
-    ) Ownable(initialOwner) {
-        require(_oracle != address(0), InvalidOracle());
-        oracle = IOracle(_oracle);
-        asset = IERC20(_asset);
+    ) public initializer {
+        if (_oracle == address(0)) revert InvalidOracle();
+
+        __Ownable_init(initialOwner);
+        __Pausable_init();
+        oracle = IPyth(_oracle);
+        usdc = IERC20(_usdc);
+        assetId = _assetId;
     }
 
     /**
@@ -198,7 +203,7 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
     ) external onlyOwner {
         require(duration > depositPeriod, InvalidDuration());
 
-        uint256 currentPrice = oracle.getPrice();
+        uint256 currentPrice = _getPrice();
         require(currentPrice != 0, InvalidOraclePrice());
 
         count++;
@@ -244,7 +249,7 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
             DepositPeriodEnded()
         );
 
-        uint256 currentPrice = oracle.getPrice();
+        uint256 currentPrice = _getPrice();
         require(currentPrice != 0, InvalidOraclePrice());
 
         uint256 liquidationPrice;
@@ -257,12 +262,12 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
         }
 
         require(
-            asset.transferFrom(msg.sender, address(this), collateral),
+            usdc.transferFrom(msg.sender, address(this), collateral),
             TransferFailed()
         );
 
         uint256 gameTokenPrice = 1;
-        uint256 gameTokens = (positionSize ) / gameTokenPrice;
+        uint256 gameTokens = (positionSize) / gameTokenPrice;
 
         UserPosition storage position = userPosition[msg.sender][betId];
         position.isLong = isLong;
@@ -306,7 +311,7 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
         require(position.collateral != 0, NoPositionFound());
         require(!position.isLiquidated, AlreadyLiquidated());
 
-        uint256 currentPrice = oracle.getPrice();
+        uint256 currentPrice = _getPrice();
         require(currentPrice != 0, InvalidOraclePrice());
 
         bool shouldLiquidate = position.isLong
@@ -338,7 +343,7 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
             BetDurationNotEnded()
         );
 
-        uint256 currentPrice = oracle.getPrice();
+        uint256 currentPrice = _getPrice();
         require(currentPrice != 0, InvalidOraclePrice());
 
         bet.closePrice = currentPrice;
@@ -385,7 +390,7 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
         position.gameTokens = 0;
 
         if (userShare > 0) {
-            require(asset.transfer(msg.sender, userShare), TransferFailed());
+            require(usdc.transfer(msg.sender, userShare), TransferFailed());
         }
 
         emit RewardsClaimed(msg.sender, betId, userShare);
@@ -424,7 +429,7 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
 
         liquidationCollateral[betId] += fee;
 
-        require(asset.transfer(msg.sender, returnAmount), TransferFailed());
+        require(usdc.transfer(msg.sender, returnAmount), TransferFailed());
 
         emit EarlyExit(msg.sender, betId, returnAmount);
     }
@@ -455,10 +460,29 @@ contract Vault is Ownable, ReentrancyGuard, Pausable {
         address tokenAddress,
         uint256 amount
     ) external onlyOwner {
-        require(tokenAddress != address(asset), CannotRecoverVaultToken());
+        require(tokenAddress != address(usdc), CannotRecoverVaultToken());
         require(
             IERC20(tokenAddress).transfer(owner(), amount),
             TransferFailed()
         );
+    }
+
+    function _getPrice() internal view returns (uint256 price) {
+        IPyth.Price memory retrievedPrice = oracle.getPriceUnsafe(assetId);
+        /*
+        retrievedPrice.price fixed-point representation base
+        retrievedPrice.expo fixed-point representation exponent (to go from base to decimal)
+        retrievedPrice.conf fixed-point representation of confidence         
+        i.e. 
+        .price = 12276250
+        .expo = -5
+        price = 12276250 * 10^(-5) =  122.76250
+        to go to 18 decimals => rebasedPrice = 12276250 * 10^(18-5) = 122762500000000000000
+        */
+
+        // Adjust exponent (using base as 18 decimals)
+        uint baseConvertion = 10 ** uint(int(18) + retrievedPrice.expo);
+
+        price = uint(retrievedPrice.price * int(baseConvertion));
     }
 }
