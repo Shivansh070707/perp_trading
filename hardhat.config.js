@@ -60,51 +60,34 @@ module.exports = {
       saveDeployments: true,
       allowUnlimitedContractSize: true,
       evmVersion: "byzantium",
-      // forking: {
-      //   url: `https://polygon-amoy.infura.io/v3/c49bfb5a9bf64c8c9ede5ee68733b6e0`,
-      //   saveDeployments: true,
-      // },
+      forking: {
+        url: `https://arbitrum-sepolia.infura.io/v3/${process.env.INFURA_KEY}`,
+        saveDeployments: true,
+      },
       gasPrice: "auto",
       accounts,
 
     },
-    zkEVMTestnet: {
-      url: `https://polygon-amoy.infura.io/v3/c49bfb5a9bf64c8c9ede5ee68733b6e0`,
-      chainId: 80002,
+    'arbitrum-sepolia': {
+      url: `https://sepolia-arbitrum.infura.io/v3/${process.env.INFURA_KEY}`,
+      chainId: 421614,
       accounts: [process.env.DEPLOYER_PRIVATE_KEY, process.env.PLAYER1_PRIVATE_KEY],
       gasPrice: "auto",
       live: true,
       saveDeployments: true,
     },
-    cardona: {
-      url: `https://rpc.cardona.zkevm-rpc.com`,
-      chainId: 2442,
-      accounts: [process.env.DEPLOYER_PRIVATE_KEY, process.env.PLAYER1_PRIVATE_KEY],
-      gasPrice: "auto",
-      live: true,
-      saveDeployments: true,
-    },
-
   },
   etherscan: {
     apiKey: process.env.API_KEY,
     customChains: [
       {
-        network: "zkEVMTestnet",
-        chainId: 80002,
+        network: 'arbitrum-sepolia',
+        chainId: 421614,
         urls: {
           apiURL: "https://api-amoy.polygonscan.com/api",
           browserURL: "https://amoy.polygonscan.com/",
         },
-      },
-      {
-        network: "cardona",
-        chainId: 2442,
-        urls: {
-          apiURL: "https://api-cardona-zkevm.polygonscan.com/api",
-          browserURL: "https://cardona-zkevm.polygonscan.com/",
-        },
-      },
+      }
     ],
   },
   paths: {

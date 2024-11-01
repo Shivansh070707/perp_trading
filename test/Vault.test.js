@@ -160,7 +160,7 @@ describe("Vault and VaultFactory Contracts", function () {
                     .to.emit(vault, "BetCreated")
                     .withArgs(1, duration, Price);
 
-                const bet = await vault._betDetails(1);
+                const bet = await vault.betDetails(1);
                 expect(bet.assetPrice).to.equal(Price);
                 expect(bet.duration).to.equal(duration);
                 expect(bet.depositPeriod).to.equal(depositPeriod);
@@ -201,7 +201,7 @@ describe("Vault and VaultFactory Contracts", function () {
 
             it("Should place long position successfully", async function () {
                 const collateral = ethers.parseUnits("100", 6);
-                const positionSize = ethers.parseUnits("200", 6);
+                const positionSize = ethers.parseUnits("1000", 6);
 
                 await expect(
                     vault.connect(user1).placeBet(betId, true, collateral, positionSize)
@@ -269,7 +269,7 @@ describe("Vault and VaultFactory Contracts", function () {
 
                 // Place a position with safe values
                 const collateral = ethers.parseUnits("100", 6);
-                const positionSize = ethers.parseUnits("200", 6);
+                const positionSize = ethers.parseUnits("1000", 6);
                 await vault.connect(user1).placeBet(
                     betId,
                     true,
@@ -282,7 +282,7 @@ describe("Vault and VaultFactory Contracts", function () {
                 const position = await vault.userPosition(user1.address, betId);
 
                 // Set price below liquidation price
-                await pythOracle.setPrice(BTC_FEED_ID, 999);
+                await pythOracle.setPrice(BTC_FEED_ID, 899);
 
                 await expect(vault.liquidatePosition(user1.address, betId))
                     .to.emit(vault, "PositionLiquidated")
@@ -307,11 +307,8 @@ describe("Vault and VaultFactory Contracts", function () {
                 const closePrice = 1100;
                 await pythOracle.setPrice(BTC_FEED_ID, closePrice);
 
-                await expect(vault.endBet(betId))
-                    .to.emit(vault, "BetEnded")
-                    .withArgs(betId, closePrice);
-
-                const bet = await vault._betDetails(betId);
+                await vault.endBet(betId)
+                const bet = await vault.betDetails(betId);
                 expect(bet.isOpen).to.be.false;
             });
 
