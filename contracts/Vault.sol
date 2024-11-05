@@ -3,7 +3,7 @@ pragma solidity =0.8.27;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "./interfaces/IPyth.sol";
+import "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
@@ -24,6 +24,7 @@ contract Vault is
     bytes32 assetId;
     uint256 public constant PRECISION = 1e18;
     uint256 public constant MIN_COLLATERAL = 1e6;
+    uint256 public stalenessThreshold;
 
     /**
      * @dev Struct containing details about a betting round
@@ -165,6 +166,7 @@ contract Vault is
     error InvalidGameTokens();
     error DepositsStillOpen();
     error CannotRecoverVaultToken();
+    error InvalidStalenessThreshold();
 
     /**
      * @dev Initializer function (replaces constructor)
@@ -184,6 +186,7 @@ contract Vault is
         oracle = IPyth(_oracle);
         usdc = IERC20(_usdc);
         assetId = _assetId;
+        stalenessThreshold = 30 minutes;
     }
 
     /**
@@ -267,7 +270,7 @@ contract Vault is
                 (currentPrice * (PRECISION + liquidationMargin)) /
                 PRECISION;
         }
-        
+
         require(
             usdc.transferFrom(msg.sender, address(this), collateral),
             TransferFailed()
@@ -473,8 +476,19 @@ contract Vault is
         );
     }
 
+    function setStalenessThreshold(
+        uint256 _stalenessThreshold
+    ) external onlyOwner {
+        require(_stalenessThreshold != 0, InvalidStalenessThreshold());
+        stalenessThreshold = _stalenessThreshold;
+    }
+
     function _getPrice() internal view returns (uint256 price) {
-        IPyth.Price memory retrievedPrice = oracle.getPriceUnsafe(assetId);
+        uint256 currentTimestamp = block.timestamp;
+        PythStructs.Price memory retrievedPrice = oracle.getPriceNoOlderThan(
+            assetId,
+            stalenessThreshold
+        );
         /*
         retrievedPrice.price fixed-point representation base
         retrievedPrice.expo fixed-point representation exponent (to go from base to decimal)

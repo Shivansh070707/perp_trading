@@ -20,6 +20,7 @@
     "@openzeppelin/contracts": "^5.0.2",
     "@openzeppelin/contracts-upgradeable": "^5.0.0",
     "@openzeppelin/hardhat-upgrades": "^2.5.0",
+    "@pythnetwork/pyth-sdk-solidity": "^4.0.0",
     "dotenv": "^16.4.5",
     "solidity-coverage": "^0.8.12"
   },
@@ -31,7 +32,7 @@
     "mainnet:verify": "hardhat --network mainnet etherscan-verify --solc-input",
     "mainnet:export": "hardhat --network mainnet export --export exports/mainnet.json",
     "prettier": "prettier --write test/**/*.js && prettier --write scripts/**/*.js && prettier --write contracts/**/*.sol",
-    "deploy":"hardhat --network cardona deploy --tags testPlayer",
-    "verify":"hardhat --network cardona etherscan-verify --solc-input --api-url https://api-cardona-zkevm.polygonscan.com"
+    "deploy": "hardhat --network cardona deploy --tags testPlayer",
+    "verify": "hardhat --network cardona etherscan-verify --solc-input --api-url https://api-cardona-zkevm.polygonscan.com"
   }
 }

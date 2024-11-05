@@ -6,23 +6,22 @@ module.exports = async function ({ getNamedAccounts, deployments }) {
     const { deploy } = deployments;
     const { deployer, proxyAdminOwner } = await getNamedAccounts();
     const owner = deployer
-    const player = (await ethers.getContract("Player")).target;
-    const slimeNFT = (await ethers.getContract("SlimeNFT")).target;
-    const slimeCoins = await deploy("Adventure", {
+
+    const vault = await deploy("Vault", {
         from: deployer,
-        contract: "AdventureMode",
+        contract: "Vault",
         log: true,
         deterministicDeployment: false,
         proxy: {
             execute: {
                 init: {
                     methodName: "initialize",
-                    args: [slimeNFT,player],
+                    args: [],
                 },
             },
             proxyContract: "OpenZeppelinTransparentProxy",
         },
     });
 };
-module.exports.tags = ["Adventure"]
+module.exports.tags = ["Vault"]
 

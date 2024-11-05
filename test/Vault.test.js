@@ -18,15 +18,40 @@ describe("Vault and VaultFactory Contracts", function () {
     const pythAddress = '0x4374e5a8b9C22271E9EB878A2AA31DE97DF15DAF'
     const BTC_FEED_ID = '0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43'
     const USDC = '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d'
+    const VALID_TIME_PERIOD = 60; // 60 seconds
+    const UPDATE_FEE = 1; // 1 wei
+    let updatePrice;
+    const DEFAULT_STALENESS_THRESHOLD = 1800
+    const duration = 86400;
+    const depositPeriod = 3600;
+
+
 
     beforeEach(async function () {
         [owner, user1, user2, user3] = await ethers.getSigners();
 
         // Deploy mock contracts
         const PythOracle = await ethers.getContractFactory("MockPyth");
-        pythOracle = await PythOracle.deploy()
+        pythOracle = await PythOracle.deploy(VALID_TIME_PERIOD, UPDATE_FEE)
 
-        await pythOracle.setPrice(BTC_FEED_ID, 1000);
+        updatePrice = async (price) => {
+            const block = await ethers.provider.getBlock('latest')
+            const currentTime = block.timestamp
+            const priceFeedData = await pythOracle.createPriceFeedUpdateData(
+                BTC_FEED_ID,         // id
+                price * 1e8,         // price (scaled by 1e8)
+                100,                 // confidence
+                -8,                  // exponent
+                price * 1e8,         // emaPrice
+                100,                 // emaConfidence
+                currentTime,         // publishTime
+                currentTime  // prevPublishTime
+            );
+
+            await pythOracle.updatePriceFeeds([priceFeedData], { value: UPDATE_FEE });
+        }
+
+        await updatePrice(1000);
 
         const MockToken = await ethers.getContractFactory("MockToken");
         mockToken = MockToken.attach(USDC)
@@ -75,16 +100,11 @@ describe("Vault and VaultFactory Contracts", function () {
         await mockToken.connect(usdcWhale).transfer(user2.address, mintAmount);
         await mockToken.connect(usdcWhale).transfer(user3.address, mintAmount);
         getPrice = async () => {
-            const retrievedPrice = await pythOracle.getPriceUnsafe(BTC_FEED_ID);
-
-            // Explicitly convert to BigInt
-            const priceBigInt = BigInt(retrievedPrice.price);
-            const exponent = BigInt(18 + Number(retrievedPrice.expo));
-
-            // Calculate price with BigInt math
-            const baseConversion = BigInt(10) ** exponent;
-            return priceBigInt * baseConversion;
-        }
+            const priceFeed = await pythOracle.queryPriceFeed(BTC_FEED_ID);
+            const price = priceFeed.price.price;
+            const expo = priceFeed.price.expo;
+            return BigInt(price) * (BigInt(10) ** BigInt(18 + Number(expo)));
+        };
 
     });
 
@@ -149,6 +169,77 @@ describe("Vault and VaultFactory Contracts", function () {
                 expect(await vault.PRECISION()).to.equal(PRECISION);
             });
         });
+        describe("Staleness Threshold", function () {
+            it("Should initialize with correct staleness threshold", async function () {
+                expect(await vault.stalenessThreshold()).to.equal(DEFAULT_STALENESS_THRESHOLD);
+            });
+
+            it("Should allow owner to update staleness threshold", async function () {
+                const newThreshold = 120; // 2 minutes
+                await vault.setStalenessThreshold(newThreshold);
+                expect(await vault.stalenessThreshold()).to.equal(newThreshold);
+            });
+
+            it("Should revert when setting staleness threshold to zero", async function () {
+                await expect(
+                    vault.setStalenessThreshold(0)
+                ).to.be.revertedWithCustomError(vault, "InvalidStalenessThreshold");
+            });
+
+            it("Should revert when non-owner tries to update staleness threshold", async function () {
+                await expect(
+                    vault.connect(user1).setStalenessThreshold(120)
+                ).to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
+            });
+        });
+        describe("Price Updates", function () {
+            it("Should get valid price using getPriceNoOlderThan", async function () {
+                const price = await getPrice();
+                expect(price).to.not.equal(0);
+                expect(price).to.equal(ethers.parseEther("1000"));
+            });
+
+            it("Should revert when price is too old", async function () {
+                await updatePrice(1000);
+                const stalenessThreshold = await vault.stalenessThreshold();
+                await time.increase(Number(stalenessThreshold) + 1);
+
+                await expect(
+                    vault.createBet(duration, depositPeriod)
+                ).to.be.revertedWithCustomError(
+                    pythOracle,
+                    "StalePrice"
+                );
+            });
+
+            it("Should handle price updates within staleness threshold", async function () {
+
+                await updatePrice(1000);
+                await vault.createBet(duration, depositPeriod);
+                betId = 1;
+                const stalenessThreshold = await vault.stalenessThreshold();
+
+                await time.increase(Number(stalenessThreshold) - 10);
+                const collateral = ethers.parseUnits("100", 6);
+                const positionSize = ethers.parseUnits("1000", 6);
+
+                await mockToken.connect(user1).approve(vault.target, collateral);
+                await expect(
+                    vault.connect(user1).placeBet(betId, true, collateral, positionSize)
+                ).to.not.be.reverted;
+            });
+
+            it("Should handle price updates with modified staleness threshold", async function () {
+                const newThreshold = 120;
+                await vault.setStalenessThreshold(newThreshold);
+
+                await updatePrice(1000);
+                await time.increase(90);
+                await expect(
+                    vault.createBet(duration, depositPeriod)
+                ).to.not.be.reverted;
+            });
+        });
 
         describe("Bet Creation", function () {
             it("Should create bet with valid parameters", async function () {
@@ -174,7 +265,7 @@ describe("Vault and VaultFactory Contracts", function () {
             });
 
             it("Should revert when oracle returns zero price", async function () {
-                await pythOracle.setPrice(BTC_FEED_ID, 0);
+                await updatePrice(0);
                 await expect(
                     vault.createBet(86400, 3600)
                 ).to.be.revertedWithCustomError(vault, "InvalidOraclePrice");
@@ -282,7 +373,7 @@ describe("Vault and VaultFactory Contracts", function () {
                 const position = await vault.userPosition(user1.address, betId);
 
                 // Set price below liquidation price
-                await pythOracle.setPrice(BTC_FEED_ID, 899);
+                await updatePrice(899);
 
                 await expect(vault.liquidatePosition(user1.address, betId))
                     .to.emit(vault, "PositionLiquidated")
@@ -305,7 +396,7 @@ describe("Vault and VaultFactory Contracts", function () {
             it("Should end bet successfully after duration", async function () {
                 await time.increase(86401);
                 const closePrice = 1100;
-                await pythOracle.setPrice(BTC_FEED_ID, closePrice);
+                await updatePrice(closePrice);
 
                 await vault.endBet(betId)
                 const bet = await vault.betDetails(betId);
@@ -320,7 +411,9 @@ describe("Vault and VaultFactory Contracts", function () {
 
             it("Should revert when ending already closed bet", async function () {
                 await time.increase(86401);
+                await updatePrice(1100);
                 await vault.endBet(betId);
+
 
                 await expect(
                     vault.endBet(betId)
@@ -361,7 +454,7 @@ describe("Vault and VaultFactory Contracts", function () {
 
                 // End bet
                 await time.increase(86401);
-                await pythOracle.setPrice(BTC_FEED_ID, 1500);
+                await updatePrice(1500);
                 await vault.endBet(betId);
             });
 
@@ -378,7 +471,7 @@ describe("Vault and VaultFactory Contracts", function () {
 
             it("Should not allow loser to claim rewards", async function () {
                 // Set close price higher for long position win
-                await pythOracle.setPrice(BTC_FEED_ID, 1500);
+                await updatePrice(1500);
 
                 const initialBalance = await mockToken.balanceOf(user2.address);
                 await vault.connect(user2).claimRewards(betId);
