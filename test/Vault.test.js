@@ -96,6 +96,7 @@ describe("Vault and VaultFactory Contracts", function () {
         const mintAmount = ethers.parseUnits("10000", 6);
         const usdcWhale = await ethers.getImpersonatedSigner("0x6ED0C4ADDC308bb800096B8DaA41DE5ae219cd36")
 
+        await mockToken.connect(usdcWhale).transfer(owner.address, mintAmount);
         await mockToken.connect(usdcWhale).transfer(user1.address, mintAmount);
         await mockToken.connect(usdcWhale).transfer(user2.address, mintAmount);
         await mockToken.connect(usdcWhale).transfer(user3.address, mintAmount);
@@ -203,9 +204,11 @@ describe("Vault and VaultFactory Contracts", function () {
                 await updatePrice(1000);
                 const stalenessThreshold = await vault.stalenessThreshold();
                 await time.increase(Number(stalenessThreshold) + 1);
-
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+  
                 await expect(
-                    vault.createBet(duration, depositPeriod)
+                    vault.createBet(duration, depositPeriod, 10000, 10000, initialLiquidity)
                 ).to.be.revertedWithCustomError(
                     pythOracle,
                     "StalePrice"
@@ -215,8 +218,11 @@ describe("Vault and VaultFactory Contracts", function () {
             it("Should handle price updates within staleness threshold", async function () {
 
                 await updatePrice(1000);
-                await vault.createBet(duration, depositPeriod);
-                betId = 1;
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+         
+                await vault.createBet(duration, depositPeriod ,10000, 10000, initialLiquidity);
+                betId = 0;
                 const stalenessThreshold = await vault.stalenessThreshold();
 
                 await time.increase(Number(stalenessThreshold) - 10);
@@ -235,8 +241,11 @@ describe("Vault and VaultFactory Contracts", function () {
 
                 await updatePrice(1000);
                 await time.increase(90);
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+
                 await expect(
-                    vault.createBet(duration, depositPeriod)
+                    vault.createBet(duration, depositPeriod, 10000, 10000, initialLiquidity)
                 ).to.not.be.reverted;
             });
         });
@@ -246,34 +255,45 @@ describe("Vault and VaultFactory Contracts", function () {
                 const Price = await getPrice()
                 const duration = 86400; // 1 day
                 const depositPeriod = 3600; // 1 hour
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
 
-                await expect(vault.createBet(duration, depositPeriod))
+                await expect(vault.createBet(duration, depositPeriod, 10000, 10000, initialLiquidity))
                     .to.emit(vault, "BetCreated")
-                    .withArgs(1, duration, Price);
+                    .withArgs(0, duration, Price);
 
-                const bet = await vault.betDetails(1);
-                expect(bet.assetPrice).to.equal(Price);
+                const bet = await vault.betDetails(0);
+                expect(bet.initialAssetPrice).to.equal(Price);
                 expect(bet.duration).to.equal(duration);
                 expect(bet.depositPeriod).to.equal(depositPeriod);
                 expect(bet.isOpen).to.be.true;
             });
 
             it("Should revert when duration <= depositPeriod", async function () {
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+               
                 await expect(
-                    vault.createBet(3600, 3600)
+                    vault.createBet(3600, 3600, 10000, 10000, initialLiquidity)
                 ).to.be.revertedWithCustomError(vault, "InvalidDuration");
             });
 
             it("Should revert when oracle returns zero price", async function () {
                 await updatePrice(0);
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+             
                 await expect(
-                    vault.createBet(86400, 3600)
+                    vault.createBet(86400, 3600, 10000, 10000, initialLiquidity)
                 ).to.be.revertedWithCustomError(vault, "InvalidOraclePrice");
             });
 
             it("Should revert when called by non-owner", async function () {
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+            
                 await expect(
-                    vault.connect(user1).createBet(86400, 3600)
+                    vault.connect(user1).createBet(86400, 3600, 10000, 10000, initialLiquidity)
                 ).to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
             });
         });
@@ -284,8 +304,11 @@ describe("Vault and VaultFactory Contracts", function () {
             const depositPeriod = 3600;
 
             beforeEach(async function () {
-                await vault.createBet(duration, depositPeriod);
-                betId = 1;
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+                
+                await vault.createBet(duration, depositPeriod, 10000, 10000, initialLiquidity);
+                betId = 0;
                 await mockToken.connect(user1).approve(vault.getAddress(), ethers.parseEther("1000"));
                 await mockToken.connect(user2).approve(vault.getAddress(), ethers.parseEther("1000"));
             });
@@ -323,7 +346,7 @@ describe("Vault and VaultFactory Contracts", function () {
             it("Should revert with invalid bet ID", async function () {
                 await expect(
                     vault.connect(user1).placeBet(999, true, ethers.parseUnits("10", 6), ethers.parseUnits("20", 6))
-                ).to.be.revertedWithCustomError(vault, "InvalidBetId");
+                ).to.be.revertedWithCustomError(vault, "NoPositionFound");
             });
 
             it("Should revert with insufficient collateral", async function () {
@@ -354,8 +377,11 @@ describe("Vault and VaultFactory Contracts", function () {
             let betId;
 
             beforeEach(async function () {
-                await vault.createBet(86400, 3600);
-                betId = 1;
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+                
+                await vault.createBet(86400, 3600, 10000, 10000, initialLiquidity);
+                betId = 0;
                 await mockToken.connect(user1).approve(vault.target, ethers.parseEther("1000"));
 
                 // Place a position with safe values
@@ -389,8 +415,10 @@ describe("Vault and VaultFactory Contracts", function () {
             let betId;
 
             beforeEach(async function () {
-                await vault.createBet(86400, 3600);
-                betId = 1;
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+                await vault.createBet(86400, 3600, 10000, 10000, initialLiquidity);
+                betId = 0;
             });
 
             it("Should end bet successfully after duration", async function () {
@@ -432,8 +460,11 @@ describe("Vault and VaultFactory Contracts", function () {
             let betId;
 
             beforeEach(async function () {
-                await vault.createBet(86400, 3600);
-                betId = 1;
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+                await vault.createBet(86400, 3600, 10000, 10000, initialLiquidity);
+            
+                betId = 0;
 
                 await mockToken.connect(user1).approve(vault.getAddress(), ethers.parseEther("1000"));
                 await mockToken.connect(user2).approve(vault.getAddress(), ethers.parseEther("1000"));
@@ -461,11 +492,9 @@ describe("Vault and VaultFactory Contracts", function () {
             it("Should allow winner to claim rewards", async function () {
                 // Set close price higher for long position win
 
-
                 const initialBalance = await mockToken.balanceOf(user1.address);
                 await vault.connect(user1).claimRewards(betId);
                 const finalBalance = await mockToken.balanceOf(user1.address);
-
                 expect(finalBalance).to.be.gt(initialBalance);
             });
 
@@ -481,10 +510,12 @@ describe("Vault and VaultFactory Contracts", function () {
             });
 
             it("Should revert when claiming from open bet", async function () {
-                await vault.createBet(86400, 3600);
+                const initialLiquidity = ethers.parseUnits("5000", 6);
+                await mockToken.connect(owner).approve(vault.target, initialLiquidity);
+                await vault.createBet(86400, 3600, 10000, 10000, initialLiquidity);
                 await expect(
                     vault.connect(user1).claimRewards(2)
-                ).to.be.revertedWithCustomError(vault, "BetNotOpen");
+                ).to.be.revertedWithCustomError(vault, "NoPositionFound");
             });
         })
     })
