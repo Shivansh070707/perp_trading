@@ -7,6 +7,7 @@ import "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
+
 /**
  * @title Vault
  * @dev A smart contract for managing betting positions on asset prices
@@ -28,28 +29,28 @@ contract Vault is
 
     /**
      * @dev Struct containing details about a betting round
-     * @param assetPrice Initial asset price when bet was created
+     * @param initialAssetPrice Initial asset price when bet was created
      * @param numPlayers Number of players in the bet
      * @param closeTime Timestamp when bet was closed
      * @param startTime Timestamp when bet started
      * @param duration Total duration of the bet
      * @param depositPeriod Period during which deposits are allowed
-     * @param totalLongTokens Total tokens for long positions
-     * @param totalShortTokens Total tokens for short positions
+     * @param longGameTokens Total tokens for long positions
+     * @param shortGameTokens Total tokens for short positions
      * @param longCollateral Total collateral in long positions
      * @param shortCollateral Total collateral in short positions
      * @param closePrice Final price when bet was closed
      * @param isOpen Whether the bet is still open
      */
     struct BetDetails {
-        uint256 assetPrice;
+        uint256 initialAssetPrice;
         uint256 numPlayers;
         uint256 closeTime;
         uint256 startTime;
         uint256 duration;
         uint256 depositPeriod;
-        uint256 totalLongTokens;
-        uint256 totalShortTokens;
+        uint256 longGameTokens;
+        uint256 shortGameTokens;
         uint256 longCollateral;
         uint256 shortCollateral;
         uint256 closePrice;
@@ -190,15 +191,6 @@ contract Vault is
     }
 
     /**
-     * @dev Modifier to check if bet exists
-     * @param betId Identifier of the bet to check
-     */
-    modifier betExists(uint256 betId) {
-        require(betId != 0 && betId <= count, InvalidBetId());
-        _;
-    }
-
-    /**
      * @notice Creates a new betting round
      * @dev Only callable by contract owner
      * @param duration Total duration of the bet
@@ -206,31 +198,38 @@ contract Vault is
      */
     function createBet(
         uint256 duration,
-        uint256 depositPeriod
+        uint256 depositPeriod,
+        uint256 longGameTokens,
+        uint256 shortGameTokens,
+        uint256 initialLiquidity
     ) external onlyOwner {
         require(duration > depositPeriod, InvalidDuration());
 
         uint256 currentPrice = _getPrice();
         require(currentPrice != 0, InvalidOraclePrice());
+        require(
+            usdc.transferFrom(msg.sender, address(this), initialLiquidity),
+            TransferFailed()
+        );
 
-        count++;
+        uint256 newcount = count++;
 
-        betDetails[count] = BetDetails({
-            assetPrice: currentPrice,
+        betDetails[newcount] = BetDetails({
+            initialAssetPrice: currentPrice,
             numPlayers: 0,
             isOpen: true,
             closePrice: 0,
             closeTime: 0,
             startTime: block.timestamp,
             duration: duration,
-            totalLongTokens: 0,
-            totalShortTokens: 0,
-            longCollateral: 0,
-            shortCollateral: 0,
+            longGameTokens: longGameTokens,
+            shortGameTokens: shortGameTokens,
+            longCollateral: initialLiquidity / 2,
+            shortCollateral: initialLiquidity / 2,
             depositPeriod: depositPeriod
         });
 
-        emit BetCreated(count, duration, currentPrice);
+        emit BetCreated(newcount, duration, currentPrice);
     }
 
     /**
@@ -245,7 +244,7 @@ contract Vault is
         bool isLong,
         uint256 collateral,
         uint256 positionSize
-    ) external nonReentrant betExists(betId) whenNotPaused {
+    ) external nonReentrant whenNotPaused {
         require(collateral >= MIN_COLLATERAL, CollateralTooLow());
         require(positionSize > collateral, InvalidPositionSize());
 
@@ -275,9 +274,12 @@ contract Vault is
             usdc.transferFrom(msg.sender, address(this), collateral),
             TransferFailed()
         );
-
-        uint256 gameTokenPrice = 1;
-        uint256 gameTokens = (positionSize) / gameTokenPrice;
+        uint256 leverage = positionSize / collateral;
+       
+        uint256 gameTokenPrice = _getGameTokenPrice(betId, isLong);
+        
+        uint256 gameTokens = (collateral * PRECISION / gameTokenPrice) * leverage;
+        
 
         UserPosition storage position = userPosition[msg.sender][betId];
         position.isLong = isLong;
@@ -291,10 +293,10 @@ contract Vault is
 
         if (isLong) {
             bet.longCollateral += collateral;
-            bet.totalLongTokens += gameTokens;
+            bet.longGameTokens += gameTokens;
         } else {
             bet.shortCollateral += collateral;
-            bet.totalShortTokens += gameTokens;
+            bet.shortGameTokens += gameTokens;
         }
 
         bet.numPlayers++;
@@ -316,8 +318,9 @@ contract Vault is
     function liquidatePosition(
         address user,
         uint256 betId
-    ) external nonReentrant betExists(betId) {
+    ) external nonReentrant {
         UserPosition storage position = userPosition[user][betId];
+        BetDetails storage bet = betDetails[betId];
         require(position.collateral != 0, NoPositionFound());
         require(!position.isLiquidated, AlreadyLiquidated());
 
@@ -329,6 +332,15 @@ contract Vault is
             : currentPrice >= position.liquidationPrice;
 
         require(shouldLiquidate, CannotLiquidate());
+
+        // Update bet details game tokens
+        if (position.isLong) {
+            bet.longGameTokens -= position.gameTokens;
+            bet.longCollateral -= position.collateral;
+        } else {
+            bet.shortGameTokens -= position.gameTokens;
+            bet.shortCollateral -= position.collateral;
+        }
 
         liquidationCollateral[betId] += position.collateral;
         position.positionSize = 0;
@@ -343,9 +355,7 @@ contract Vault is
      * @dev Only callable by contract owner
      * @param betId Identifier of the bet to end
      */
-    function endBet(
-        uint256 betId
-    ) external onlyOwner betExists(betId) whenNotPaused {
+    function endBet(uint256 betId) external onlyOwner whenNotPaused {
         BetDetails storage bet = betDetails[betId];
         require(bet.isOpen, BetAlreadyClosed());
         require(
@@ -367,9 +377,7 @@ contract Vault is
      * @notice Claims rewards for a closed betting round
      * @param betId Identifier of the bet
      */
-    function claimRewards(
-        uint256 betId
-    ) external nonReentrant betExists(betId) whenNotPaused {
+    function claimRewards(uint256 betId) external nonReentrant whenNotPaused {
         BetDetails storage bet = betDetails[betId];
         require(!bet.isOpen, BetNotOpen());
 
@@ -377,22 +385,26 @@ contract Vault is
         require(!position.isLiquidated, PositionAlreadyLiquidated());
         require(position.collateral != 0, NoPositionFound());
 
-        bool isLongWinner = bet.closePrice > bet.assetPrice;
+        bool isLongWinner = bet.closePrice > bet.initialAssetPrice;
         bool isWinner = position.isLong == isLongWinner;
 
         uint256 totalCollateral = position.isLong
             ? bet.shortCollateral + liquidationCollateral[betId]
             : bet.longCollateral + liquidationCollateral[betId];
+       
 
         uint256 userShare;
         if (isWinner) {
             uint256 totalWinningTokens = position.isLong
-                ? bet.totalLongTokens
-                : bet.totalShortTokens;
+                ? bet.longGameTokens
+                : bet.shortGameTokens;
+       
+
             userShare =
                 (position.gameTokens * totalCollateral) /
                 totalWinningTokens;
         }
+      
 
         position.collateral = 0;
         position.positionSize = 0;
@@ -413,7 +425,7 @@ contract Vault is
     function earlyExit(
         uint256 betId,
         uint256 exitGameTokens
-    ) external nonReentrant betExists(betId) whenNotPaused {
+    ) external nonReentrant whenNotPaused {
         BetDetails storage bet = betDetails[betId];
         require(!bet.isOpen, DepositsStillOpen());
 
@@ -429,7 +441,8 @@ contract Vault is
             position.collateral) / position.positionSize;
 
         uint256 timeElapsed = block.timestamp - bet.startTime;
-        uint256 fee = (timeElapsed * proportionalCollateral) / bet.duration;
+        uint256 feePercentage = (timeElapsed * 100) / bet.duration;
+        uint256 fee = (proportionalCollateral * feePercentage) / 100;
         uint256 returnAmount = proportionalCollateral - fee;
 
         position.positionSize -= proportionalSize;
@@ -504,5 +517,22 @@ contract Vault is
         uint baseConvertion = 10 ** uint(int(18) + retrievedPrice.expo);
 
         price = uint(retrievedPrice.price * int(baseConvertion));
+    }
+    /**
+     * @dev Calculates the game token price based on the current pool ratio
+     * @param betId Identifier of the bet
+     * @param isLong Whether calculating for long position
+     * @return price Game token price in USDC (with 18 decimals precision)
+     */
+    function _getGameTokenPrice(
+        uint256 betId,
+        bool isLong
+    ) internal view returns (uint256) {
+        BetDetails storage bet = betDetails[betId];
+        if (isLong) {
+            return (bet.longCollateral * PRECISION) / bet.longGameTokens;
+        } else {
+            return (bet.shortCollateral * PRECISION) / bet.shortGameTokens;
+        }
     }
 }
