@@ -56,11 +56,11 @@ describe("Vault and VaultFactory Contracts", function () {
         const MockToken = await ethers.getContractFactory("MockToken");
         mockToken = MockToken.attach(USDC)
 
-        const VaultImplementation = await ethers.getContractFactory("Vault");
+        const VaultImplementation = await ethers.getContractFactory("MoonVault");
         const vaultImplementation = await VaultImplementation.deploy()
 
         // Deploy VaultFactory
-        const VaultFactory = await ethers.getContractFactory("VaultFactory");
+        const VaultFactory = await ethers.getContractFactory("MoonVaultFactory");
         vaultFactory = await VaultFactory.deploy(vaultImplementation.target);
 
         // Create new Vault instance
@@ -89,7 +89,7 @@ describe("Vault and VaultFactory Contracts", function () {
         const vaultAddress = decoded.args[0];
 
         // Get Vault instance
-        const Vault = await ethers.getContractFactory("Vault");
+        const Vault = await ethers.getContractFactory("MoonVault");
         vault = Vault.attach(vaultAddress);
 
         // Mint tokens to users
@@ -117,13 +117,13 @@ describe("Vault and VaultFactory Contracts", function () {
         it("Should revert when creating vault with zero oracle address", async function () {
             await expect(
                 vaultFactory.createVault(ZERO_ADDRESS, BTC_FEED_ID, USDC)
-            ).to.be.revertedWithCustomError(vaultFactory, "InvalidOracleAddress");
+            ).to.be.revertedWithCustomError(vaultFactory, "MVF_InvalidOracleAddress");
         });
 
         it("Should revert when creating vault with zero asset address", async function () {
             await expect(
                 vaultFactory.createVault(pythOracle.target, BTC_FEED_ID, ZERO_ADDRESS)
-            ).to.be.revertedWithCustomError(vaultFactory, "InvalidAssetAddress");
+            ).to.be.revertedWithCustomError(vaultFactory, "MVF_InvalidAssetAddress");
         });
 
         it("Should emit VaultCreated event", async function () {
@@ -184,7 +184,7 @@ describe("Vault and VaultFactory Contracts", function () {
             it("Should revert when setting staleness threshold to zero", async function () {
                 await expect(
                     vault.setStalenessThreshold(0)
-                ).to.be.revertedWithCustomError(vault, "InvalidStalenessThreshold");
+                ).to.be.revertedWithCustomError(vault, "MV_InvalidStalenessThreshold");
             });
 
             it("Should revert when non-owner tries to update staleness threshold", async function () {
@@ -275,7 +275,7 @@ describe("Vault and VaultFactory Contracts", function () {
                
                 await expect(
                     vault.createBet(3600, 3600, 10000, 10000, initialLiquidity)
-                ).to.be.revertedWithCustomError(vault, "InvalidDuration");
+                ).to.be.revertedWithCustomError(vault, "MV_InvalidDuration");
             });
 
             it("Should revert when oracle returns zero price", async function () {
@@ -285,7 +285,7 @@ describe("Vault and VaultFactory Contracts", function () {
              
                 await expect(
                     vault.createBet(86400, 3600, 10000, 10000, initialLiquidity)
-                ).to.be.revertedWithCustomError(vault, "InvalidOraclePrice");
+                ).to.be.revertedWithCustomError(vault, "MV_InvalidOraclePrice");
             });
 
             it("Should revert when called by non-owner", async function () {
@@ -346,7 +346,7 @@ describe("Vault and VaultFactory Contracts", function () {
             it("Should revert with invalid bet ID", async function () {
                 await expect(
                     vault.connect(user1).placeBet(999, true, ethers.parseUnits("10", 6), ethers.parseUnits("20", 6))
-                ).to.be.revertedWithCustomError(vault, "NoPositionFound");
+                ).to.be.revertedWithCustomError(vault, "MV_BetNotOpen");
             });
 
             it("Should revert with insufficient collateral", async function () {
@@ -355,21 +355,21 @@ describe("Vault and VaultFactory Contracts", function () {
 
                 await expect(
                     vault.connect(user1).placeBet(betId, true, lowCollateral, positionSize)
-                ).to.be.revertedWithCustomError(vault, "CollateralTooLow");
+                ).to.be.revertedWithCustomError(vault, "MV_CollateralTooLow");
             });
 
             it("Should revert when positionSize <= collateral", async function () {
                 const collateral = ethers.parseUnits("10", 6);
                 await expect(
                     vault.connect(user1).placeBet(betId, true, collateral, collateral)
-                ).to.be.revertedWithCustomError(vault, "InvalidPositionSize");
+                ).to.be.revertedWithCustomError(vault, "MV_InvalidPositionSize");
             });
 
             it("Should revert after deposit period ends", async function () {
                 await time.increase(depositPeriod + 1);
                 await expect(
                     vault.connect(user1).placeBet(betId, true, ethers.parseUnits("10", 6), ethers.parseUnits("20", 6))
-                ).to.be.revertedWithCustomError(vault, "DepositPeriodEnded");
+                ).to.be.revertedWithCustomError(vault, "MV_DepositPeriodEnded");
             });
         });
 
@@ -434,7 +434,7 @@ describe("Vault and VaultFactory Contracts", function () {
             it("Should revert when ending bet before duration", async function () {
                 await expect(
                     vault.endBet(betId)
-                ).to.be.revertedWithCustomError(vault, "BetDurationNotEnded");
+                ).to.be.revertedWithCustomError(vault, "MV_BetDurationNotEnded");
             });
 
             it("Should revert when ending already closed bet", async function () {
@@ -445,7 +445,7 @@ describe("Vault and VaultFactory Contracts", function () {
 
                 await expect(
                     vault.endBet(betId)
-                ).to.be.revertedWithCustomError(vault, "BetAlreadyClosed");
+                ).to.be.revertedWithCustomError(vault, "MV_BetAlreadyClosed");
             });
 
             it("Should revert when called by non-owner", async function () {
@@ -515,7 +515,7 @@ describe("Vault and VaultFactory Contracts", function () {
                 await vault.createBet(86400, 3600, 10000, 10000, initialLiquidity);
                 await expect(
                     vault.connect(user1).claimRewards(2)
-                ).to.be.revertedWithCustomError(vault, "NoPositionFound");
+                ).to.be.revertedWithCustomError(vault, "MV_NoPositionFound");
             });
         })
     })
