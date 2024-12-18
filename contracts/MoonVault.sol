@@ -257,7 +257,10 @@ contract MoonVault is
         uint256 exitGameTokens
     ) external override nonReentrant whenNotPaused {
         BetDetails storage bet = _betDetails[betId];
-        require(!bet.isOpen, MV_DepositsStillOpen());
+        require(
+            block.timestamp <= bet.startTime + bet.depositPeriod,
+            MV_DepositPeriodEnded()
+        );
 
         UserPosition storage position = _userPosition[msg.sender][betId];
         require(
@@ -267,6 +270,7 @@ contract MoonVault is
 
         uint256 proportionalSize = (exitGameTokens * position.positionSize) /
             position.gameTokens;
+
         uint256 proportionalCollateral = (proportionalSize *
             position.collateral) / position.positionSize;
 
@@ -274,7 +278,13 @@ contract MoonVault is
         uint256 feePercentage = (timeElapsed * 100) / bet.duration;
         uint256 fee = (proportionalCollateral * feePercentage) / 100;
         uint256 returnAmount = proportionalCollateral - fee;
-
+        if (position.isLong) {
+            bet.longCollateral -= proportionalCollateral;
+            bet.longGameTokens -= exitGameTokens;
+        } else {
+            bet.shortCollateral -= proportionalCollateral;
+            bet.shortGameTokens -= exitGameTokens;
+        }
         position.positionSize -= proportionalSize;
         position.collateral -= proportionalCollateral;
         position.gameTokens -= exitGameTokens;
@@ -307,7 +317,6 @@ contract MoonVault is
         return _userPosition[user][betId];
     }
 
- 
     function recoverToken(
         address tokenAddress,
         uint256 amount
@@ -365,6 +374,7 @@ contract MoonVault is
         bool isLong
     ) internal view returns (uint256) {
         BetDetails storage bet = _betDetails[betId];
+        uint256 totalGameTokens = bet.longGameTokens + bet.shortGameTokens;
         if (isLong) {
             return (bet.longGameTokens * PRECISION) / totalGameTokens;
         } else {
