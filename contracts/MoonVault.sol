@@ -325,6 +325,12 @@ contract MoonVault is
         require(_stalenessThreshold != 0, MV_InvalidStalenessThreshold());
         stalenessThreshold = _stalenessThreshold;
     }
+    function getGameTokenPrice(
+        uint256 betId,
+        bool isLong
+    ) external view returns (uint256) {
+        return _getGameTokenPrice(betId, isLong);
+    }
 
     function _getPrice() internal view returns (uint256 price) {
         uint256 currentTimestamp = block.timestamp;
@@ -360,9 +366,9 @@ contract MoonVault is
     ) internal view returns (uint256) {
         BetDetails storage bet = _betDetails[betId];
         if (isLong) {
-            return (bet.longCollateral * PRECISION) / bet.longGameTokens;
+            return (bet.longGameTokens * PRECISION) / totalGameTokens;
         } else {
-            return (bet.shortCollateral * PRECISION) / bet.shortGameTokens;
+            return (bet.shortGameTokens * PRECISION) / totalGameTokens;
         }
     }
 }
