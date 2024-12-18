@@ -28,18 +28,11 @@ contract MoonVaultFactory is Ownable, IMoonVaultFactory {
         vaultImplementation = _vaultImplementation;
     }
 
-    /**
-     * @notice Creates a new MoonVault instance
-     * @dev Only callable by the contract owner
-     * @param _oracle The address of the oracle contract to be used by the new MoonVault
-     * @param _assetId The address of the ERC20 token to be used as the asset in the new MoonVault
-     * @return The address of the newly created MoonVault
-     */
     function createVault(
         address _oracle,
         bytes32 _assetId,
         address _usdc
-    ) external onlyOwner returns (address) {
+    ) external override onlyOwner returns (address) {
         if (_oracle == address(0)) revert MVF_InvalidOracleAddress();
         if (_usdc == address(0)) revert MVF_InvalidAssetAddress();
         address newVault = Clones.clone(vaultImplementation);
