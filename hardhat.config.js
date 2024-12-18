@@ -61,7 +61,7 @@ module.exports = {
       allowUnlimitedContractSize: true,
       evmVersion: "byzantium",
       forking: {
-        url: `https://mainnet-arbitrum.infura.io/v3/${process.env.INFURA_KEY}`,
+        url: `https://arbitrum-mainnet.infura.io/v3/${process.env.INFURA_KEY}`,
         saveDeployments: true,
       },
       gasPrice: "auto",
@@ -77,7 +77,7 @@ module.exports = {
       saveDeployments: true,
     },
     'arbitrum': {
-      url: `https://mainnet-arbitrum.infura.io/v3/${process.env.INFURA_KEY}`,
+      url: `https://arbitrum-mainnet.infura.io/v3/${process.env.INFURA_KEY}`,
       chainId: 42161,
       accounts: [process.env.DEPLOYER_PRIVATE_KEY, process.env.PLAYER1_PRIVATE_KEY],
       gasPrice: "auto",
