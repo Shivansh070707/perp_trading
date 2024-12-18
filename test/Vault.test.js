@@ -18,7 +18,7 @@ describe("Vault and VaultFactory Contracts", function () {
     const MIN_COLLATERAL = ethers.parseUnits("1", 6); // 1e6
     const pythAddress = '0x4374e5a8b9C22271E9EB878A2AA31DE97DF15DAF'
     const BTC_FEED_ID = '0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43'
-    const USDC = '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d'
+    const USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
     const VALID_TIME_PERIOD = 60; // 60 seconds
     const UPDATE_FEE = 1; // 1 wei
     let updatePrice;
@@ -95,7 +95,7 @@ describe("Vault and VaultFactory Contracts", function () {
 
         // Mint tokens to users
         const mintAmount = ethers.parseUnits("10000", 6);
-        const usdcWhale = await ethers.getImpersonatedSigner("0x6ED0C4ADDC308bb800096B8DaA41DE5ae219cd36")
+        const usdcWhale = await ethers.getImpersonatedSigner("0x3931dAb967C3E2dbb492FE12460a66d0fe4cC857")
 
         await mockToken.connect(usdcWhale).transfer(owner.address, mintAmount);
         await mockToken.connect(usdcWhale).transfer(user1.address, mintAmount);
@@ -601,8 +601,6 @@ describe("Vault and VaultFactory Contracts", function () {
                     ethers.parseUnits("1000", 6),
                     ethers.parseUnits("5000", 6)
                 );
-                await time.increase(depositPeriod + 1)
-
             });
 
             it("Should allow early exit with partial game tokens", async function () {
@@ -680,7 +678,7 @@ describe("Vault and VaultFactory Contracts", function () {
         });
         describe("Complete Lifecycle", function () {
 
-            it.only("Full Lifecycle of Betting on BTC Price Movement", async () => {
+            it("Full Lifecycle of Betting on BTC Price Movement", async () => {
                 await updatePrice(69500);
                 // Initial setup
                 const initialLiquidity = ethers.parseUnits("5000", 6);

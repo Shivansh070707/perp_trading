@@ -61,7 +61,7 @@ module.exports = {
       allowUnlimitedContractSize: true,
       evmVersion: "byzantium",
       forking: {
-        url: `https://arbitrum-sepolia.infura.io/v3/${process.env.INFURA_KEY}`,
+        url: `https://mainnet-arbitrum.infura.io/v3/${process.env.INFURA_KEY}`,
         saveDeployments: true,
       },
       gasPrice: "auto",
@@ -76,6 +76,14 @@ module.exports = {
       live: true,
       saveDeployments: true,
     },
+    'arbitrum': {
+      url: `https://mainnet-arbitrum.infura.io/v3/${process.env.INFURA_KEY}`,
+      chainId: 42161,
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY, process.env.PLAYER1_PRIVATE_KEY],
+      gasPrice: "auto",
+      live: true,
+      saveDeployments: true,
+    },
   },
   etherscan: {
     apiKey: process.env.API_KEY,
@@ -83,6 +91,14 @@ module.exports = {
       {
         network: 'arbitrum-sepolia',
         chainId: 421614,
+        urls: {
+          apiURL: "https://api-amoy.polygonscan.com/api",
+          browserURL: "https://amoy.polygonscan.com/",
+        },
+      },
+      {
+        network: 'arbitrum',
+        chainId: 42161,
         urls: {
           apiURL: "https://api-amoy.polygonscan.com/api",
           browserURL: "https://amoy.polygonscan.com/",
