@@ -53,19 +53,13 @@ contract MoonVault is
         stalenessThreshold = 30 minutes;
     }
 
-    /**
-     * @notice Creates a new betting round
-     * @dev Only callable by contract owner
-     * @param duration Total duration of the bet
-     * @param depositPeriod Period during which deposits are allowed
-     */
     function createBet(
         uint256 duration,
         uint256 depositPeriod,
         uint256 longGameTokens,
         uint256 shortGameTokens,
         uint256 initialLiquidity
-    ) external onlyOwner {
+    ) external override onlyOwner {
         require(duration > depositPeriod, MV_InvalidDuration());
 
         uint256 currentPrice = _getPrice();
@@ -95,19 +89,12 @@ contract MoonVault is
         emit BetCreated(newcount, duration, currentPrice);
     }
 
-    /**
-     * @notice Places a bet in an active betting round
-     * @param betId Identifier of the bet
-     * @param isLong Whether position is long
-     * @param collateral Amount of collateral to deposit
-     * @param positionSize Size of the position
-     */
     function placeBet(
         uint256 betId,
         bool isLong,
         uint256 collateral,
         uint256 positionSize
-    ) external nonReentrant whenNotPaused {
+    ) external override nonReentrant whenNotPaused {
         require(collateral >= MIN_COLLATERAL, MV_CollateralTooLow());
         require(positionSize > collateral, MV_InvalidPositionSize());
 
@@ -173,15 +160,10 @@ contract MoonVault is
         );
     }
 
-    /**
-     * @notice Liquidates a user's position
-     * @param user Address of the user to liquidate
-     * @param betId Identifier of the bet
-     */
     function liquidatePosition(
         address user,
         uint256 betId
-    ) external nonReentrant {
+    ) external override nonReentrant {
         UserPosition storage position = _userPosition[user][betId];
         BetDetails storage bet = _betDetails[betId];
         require(position.collateral != 0, MV_NoPositionFound());
@@ -213,12 +195,7 @@ contract MoonVault is
         emit PositionLiquidated(user, betId);
     }
 
-    /**
-     * @notice Ends a betting round
-     * @dev Only callable by contract owner
-     * @param betId Identifier of the bet to end
-     */
-    function endBet(uint256 betId) external onlyOwner whenNotPaused {
+    function endBet(uint256 betId) external override onlyOwner whenNotPaused {
         BetDetails storage bet = _betDetails[betId];
         require(bet.isOpen, MV_BetAlreadyClosed());
         require(
@@ -236,11 +213,9 @@ contract MoonVault is
         emit BetEnded(betId, currentPrice);
     }
 
-    /**
-     * @notice Claims rewards for a closed betting round
-     * @param betId Identifier of the bet
-     */
-    function claimRewards(uint256 betId) external nonReentrant whenNotPaused {
+    function claimRewards(
+        uint256 betId
+    ) external override nonReentrant whenNotPaused {
         BetDetails storage bet = _betDetails[betId];
         require(!bet.isOpen, MV_BetNotOpen());
 
@@ -277,15 +252,10 @@ contract MoonVault is
         emit RewardsClaimed(msg.sender, betId, userShare);
     }
 
-    /**
-     * @notice Allows early exit from a position
-     * @param betId Identifier of the bet
-     * @param exitGameTokens Number of game tokens to exit with
-     */
     function earlyExit(
         uint256 betId,
         uint256 exitGameTokens
-    ) external nonReentrant whenNotPaused {
+    ) external override nonReentrant whenNotPaused {
         BetDetails storage bet = _betDetails[betId];
         require(!bet.isOpen, MV_DepositsStillOpen());
 
@@ -316,45 +286,32 @@ contract MoonVault is
         emit EarlyExit(msg.sender, betId, returnAmount);
     }
 
-    /**
-     * @notice Pauses the contract
-     * @dev Only callable by contract owner
-     */
-    function pause() external onlyOwner {
+    function pause() external override onlyOwner {
         _pause();
     }
 
-    /**
-     * @notice Unpauses the contract
-     * @dev Only callable by contract owner
-     */
-    function unpause() external onlyOwner {
+    function unpause() external override onlyOwner {
         _unpause();
     }
 
     function betDetails(
         uint256 betId
-    ) external view returns (BetDetails memory) {
+    ) external view override returns (BetDetails memory) {
         return _betDetails[betId];
     }
 
     function userPosition(
         address user,
         uint256 betId
-    ) external view returns (UserPosition memory) {
+    ) external view override returns (UserPosition memory) {
         return _userPosition[user][betId];
     }
 
-    /**
-     * @notice Recovers ERC20 tokens accidentally sent to the contract
-     * @dev Only callable by contract owner, cannot recover MoonVault token
-     * @param tokenAddress Address of the token to recover
-     * @param amount Amount of tokens to recover
-     */
+ 
     function recoverToken(
         address tokenAddress,
         uint256 amount
-    ) external onlyOwner {
+    ) external override onlyOwner {
         require(tokenAddress != address(usdc), MV_CannotRecoverVaultToken());
         require(
             IERC20(tokenAddress).transfer(owner(), amount),
