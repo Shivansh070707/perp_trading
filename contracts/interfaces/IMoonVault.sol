@@ -22,18 +22,18 @@ interface IMoonVault {
      * @param isOpen Whether the bet is still open
      */
     struct BetDetails {
-        uint256 initialAssetPrice;
+        uint128 initialAssetPrice;
+        uint128 closePrice;
+        uint40 closeTime;
+        uint40 startTime;
+        uint40 duration;
+        uint40 depositPeriod;
+        bool isOpen;
         uint256 numPlayers;
-        uint256 closeTime;
-        uint256 startTime;
-        uint256 duration;
-        uint256 depositPeriod;
         uint256 longGameTokens;
         uint256 shortGameTokens;
         uint256 longCollateral;
         uint256 shortCollateral;
-        uint256 closePrice;
-        bool isOpen;
     }
 
     /**
@@ -49,12 +49,12 @@ interface IMoonVault {
      */
     struct UserPosition {
         bool isLong;
+        bool isLiquidated;
+        uint40 entryTime;
+        uint104 entryPrice;
+        uint104 liquidationPrice;
         uint256 collateral;
         uint256 positionSize;
-        uint256 entryPrice;
-        uint256 liquidationPrice;
-        bool isLiquidated;
-        uint256 entryTime;
         uint256 gameTokens;
     }
 
@@ -210,7 +210,7 @@ interface IMoonVault {
      * @dev Only callable by contract owner
      */
     function unpause() external;
-    
+
     /**
      * @notice Recovers ERC20 tokens accidentally sent to the contract
      * @dev Only callable by contract owner, cannot recover vault token

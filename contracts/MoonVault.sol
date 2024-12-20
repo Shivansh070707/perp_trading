@@ -20,13 +20,13 @@ contract MoonVault is
     ReentrancyGuardUpgradeable,
     IMoonVault
 {
-    uint256 count;
+    uint128 count;
+    uint128 public stalenessThreshold;
     IERC20 usdc;
     IPyth oracle;
     bytes32 assetId;
     uint256 public constant PRECISION = 1e18;
     uint256 public constant MIN_COLLATERAL = 1e6;
-    uint256 public stalenessThreshold;
 
     mapping(uint256 => BetDetails) private _betDetails;
     mapping(address => mapping(uint256 => UserPosition)) private _userPosition;
@@ -63,29 +63,32 @@ contract MoonVault is
         require(duration > depositPeriod, MV_InvalidDuration());
 
         uint256 currentPrice = _getPrice();
-        require(currentPrice != 0, MV_InvalidOraclePrice());
+        require(currentPrice > 0, MV_InvalidOraclePrice());
         require(
             usdc.transferFrom(msg.sender, address(this), initialLiquidity),
             MV_TransferFailed()
         );
-
-        uint256 newcount = count++;
+        uint256 newcount;
+        uint256 halfLiquidity;
+        unchecked {
+            newcount = count++;
+            halfLiquidity = initialLiquidity / 2;
+        }
 
         _betDetails[newcount] = BetDetails({
-            initialAssetPrice: currentPrice,
-            numPlayers: 0,
-            isOpen: true,
+            initialAssetPrice: uint128(currentPrice),
             closePrice: 0,
-            closeTime: 0,
-            startTime: block.timestamp,
-            duration: duration,
+            numPlayers: 0,
             longGameTokens: longGameTokens,
             shortGameTokens: shortGameTokens,
-            longCollateral: initialLiquidity / 2,
-            shortCollateral: initialLiquidity / 2,
-            depositPeriod: depositPeriod
+            longCollateral: halfLiquidity,
+            shortCollateral: halfLiquidity,
+            startTime: uint40(block.timestamp),
+            closeTime: 0,
+            duration: uint40(duration),
+            depositPeriod: uint40(depositPeriod),
+            isOpen: true
         });
-
         emit BetCreated(newcount, duration, currentPrice);
     }
 
@@ -106,7 +109,7 @@ contract MoonVault is
         );
 
         uint256 currentPrice = _getPrice();
-        require(currentPrice != 0, MV_InvalidOraclePrice());
+        require(currentPrice > 0, MV_InvalidOraclePrice());
 
         uint256 liquidationPrice;
         uint256 liquidationMargin = (collateral * PRECISION) / positionSize;
@@ -135,10 +138,10 @@ contract MoonVault is
         position.isLong = isLong;
         position.collateral = collateral;
         position.positionSize = positionSize;
-        position.entryPrice = currentPrice;
-        position.liquidationPrice = liquidationPrice;
+        position.entryPrice = uint104(currentPrice);
+        position.liquidationPrice = uint104(liquidationPrice);
         position.isLiquidated = false;
-        position.entryTime = block.timestamp;
+        position.entryTime = uint40(block.timestamp);
         position.gameTokens = gameTokens;
 
         if (isLong) {
@@ -148,9 +151,9 @@ contract MoonVault is
             bet.shortCollateral += collateral;
             bet.shortGameTokens += gameTokens;
         }
-
-        bet.numPlayers++;
-
+        unchecked {
+            bet.numPlayers++;
+        }
         emit PositionPlaced(
             msg.sender,
             betId,
@@ -166,11 +169,11 @@ contract MoonVault is
     ) external override nonReentrant {
         UserPosition storage position = _userPosition[user][betId];
         BetDetails storage bet = _betDetails[betId];
-        require(position.collateral != 0, MV_NoPositionFound());
+        require(position.collateral > 0, MV_NoPositionFound());
         require(!position.isLiquidated, MV_AlreadyLiquidated());
 
         uint256 currentPrice = _getPrice();
-        require(currentPrice != 0, MV_InvalidOraclePrice());
+        require(currentPrice > 0, MV_InvalidOraclePrice());
 
         bool shouldLiquidate = position.isLong
             ? currentPrice <= position.liquidationPrice
@@ -204,10 +207,10 @@ contract MoonVault is
         );
 
         uint256 currentPrice = _getPrice();
-        require(currentPrice != 0, MV_InvalidOraclePrice());
+        require(currentPrice > 0, MV_InvalidOraclePrice());
 
-        bet.closePrice = currentPrice;
-        bet.closeTime = block.timestamp;
+        bet.closePrice = uint128(currentPrice);
+        bet.closeTime = uint40(block.timestamp);
         bet.isOpen = false;
 
         emit BetEnded(betId, currentPrice);
@@ -221,7 +224,7 @@ contract MoonVault is
 
         UserPosition storage position = _userPosition[msg.sender][betId];
         require(!position.isLiquidated, MV_PositionAlreadyLiquidated());
-        require(position.collateral != 0, MV_NoPositionFound());
+        require(position.collateral > 0, MV_NoPositionFound());
 
         bool isLongWinner = bet.closePrice > bet.initialAssetPrice;
         bool isWinner = position.isLong == isLongWinner;
@@ -257,14 +260,16 @@ contract MoonVault is
         uint256 exitGameTokens
     ) external override nonReentrant whenNotPaused {
         BetDetails storage bet = _betDetails[betId];
+        uint40 currentTime = uint40(block.timestamp);
+        uint40 startTime = bet.startTime;
         require(
-            block.timestamp <= bet.startTime + bet.depositPeriod,
+            currentTime <= startTime + bet.depositPeriod,
             MV_DepositPeriodEnded()
         );
 
         UserPosition storage position = _userPosition[msg.sender][betId];
         require(
-            exitGameTokens != 0 && exitGameTokens <= position.gameTokens,
+            exitGameTokens > 0 && exitGameTokens <= position.gameTokens,
             MV_InvalidGameTokens()
         );
 
@@ -274,7 +279,7 @@ contract MoonVault is
         uint256 proportionalCollateral = (proportionalSize *
             position.collateral) / position.positionSize;
 
-        uint256 timeElapsed = block.timestamp - bet.startTime;
+        uint256 timeElapsed = currentTime - startTime;
         uint256 feePercentage = (timeElapsed * 100) / bet.duration;
         uint256 fee = (proportionalCollateral * feePercentage) / 100;
         uint256 returnAmount = proportionalCollateral - fee;
@@ -331,8 +336,8 @@ contract MoonVault is
     function setStalenessThreshold(
         uint256 _stalenessThreshold
     ) external onlyOwner {
-        require(_stalenessThreshold != 0, MV_InvalidStalenessThreshold());
-        stalenessThreshold = _stalenessThreshold;
+        require(_stalenessThreshold > 0, MV_InvalidStalenessThreshold());
+        stalenessThreshold = uint128(_stalenessThreshold);
     }
     function getGameTokenPrice(
         uint256 betId,
